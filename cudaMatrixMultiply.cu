@@ -78,7 +78,7 @@ Matrix multiply(Matrix left, Matrix right){
   //step 4: launch kernel
   int block_size = 64;
   int grid_size = result_size / block_size + 1;
-  multiply_kernel_stupid <<<block_size, grid_size>>> (left_d, right_d, result_d);
+  multiply_kernel_stupid <<<grid_size, block_size>>> (left_d, right_d, result_d);
 
   //step 5: copy results back to host
   cudaMemcpy(result.elements, result_d.elements, result_size, cudaMemcpyDeviceToHost);
