@@ -8,7 +8,7 @@ typedef struct{
 } Matrix;
 
 
-__global__ void multiply_kernel(const Matrix left, const Matrix right, Matrix result);
+__global__ void multiply_kernel_stupid(const Matrix left, const Matrix right, Matrix result);
 Matrix ones(int row_count, int column_count);
 Matrix multiply(Matrix left, matrix right);
 
@@ -19,8 +19,21 @@ int main(){
 
 }
 
-__global__ void multiply_kernel(const Matrix left, const Matrix right, Matrix result){
-
+//stupid kernel, one thread per result cell, global memory, no use of spacial locality.
+__global__ void multiply_kernel_stupid(const Matrix left, const Matrix right, Matrix result){
+  int index = threadIdx.x + blockIdx.x * blockDim.x;
+  int row_index = index / result.column_count;
+  int column_index = index % result.column_count;
+  //now compute the dot product of left row with right column
+  int sum = 0;
+  int left_index = left.column_count * column_index;
+  int right_index = column_index;
+  while(left_index < levt.column_count * (column_index + 1)){
+    sum += left[left_index] * right[right_index];
+    left_index += 1;
+    right_index += right.row_count;
+  }
+  __syncthreads();
 }
 
 Matrix multiply(Matrix left, matrix right){
@@ -49,16 +62,20 @@ Matrix multiply(Matrix left, matrix right){
   if(error != cudaSuccess){ printf("error allocating matrix\n"); }
 
   //step 3: copy left and right to device
-  error = cudaMemcpy(left.elements, left_d.elements, left_size, cudaMemcpyHostToDevice);
+  error = cudaMemcpy(left_d.elements, left.elements, left_size, cudaMemcpyHostToDevice);
   if(error != cudaSuccess){ printf("error copying left matrix\n"); }
-  error = cudaMemcpy(right.elements, right_d.elements, right, cudaMemcpyHostToDevice);
+  error = cudaMemcpy(right_d.elements, right.elements, right_size, cudaMemcpyHostToDevice);
   if(error != cudaSuccess){ printf("error copying right matrix\n"); }
 
-
   //step 4: launch kernel
-  
+  int block_size = 512;
+  int grid_size = result_size / grid_size + 1
+  error = multiply_kernel_stupid(left_d, right_d, result_d);
+  if(error != cudaSuccess){ printf("error launching kernel\n"); }
 
   //step 5: copy results back to host
+  cudaMemcpy(result.elements, result_d.elements, result_size, cudaMemcpyDeviceToHost);
+
 }
 
 Matrix ones (int row_count, int column_count){
