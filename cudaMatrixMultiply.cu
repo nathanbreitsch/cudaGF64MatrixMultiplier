@@ -77,7 +77,7 @@ Matrix multiply(Matrix left, Matrix right){
 
 
   dim3 block_dims(32, 32);
-  dim3 grid_dims(result.column_count / block_dims.x, result.row_count / block_dims.y);
+  dim3 grid_dims(result.column_count / block_dims.x + 1, result.row_count / block_dims.y + 1);
   multiply_kernel_stupid <<<grid_dims, block_dims>>> (left_d, right_d, result_d);
 
   //step 5: copy results back to host
