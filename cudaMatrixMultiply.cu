@@ -25,19 +25,16 @@ int main(){
 
 //stupid kernel, one thread per result cell, global memory, no use of spacial locality.
 __global__ void multiply_kernel_stupid(const Matrix left, const Matrix right, Matrix result){
-  int index = threadIdx.x + blockIdx.x * blockDim.x;
-  int row_index = index / result.column_count;
-  int column_index = index % result.column_count;
-  //now compute the dot product of left row with right column
   int sum = 0;
-  int left_index = left.column_count * row_index;
-  int right_index = column_index;
-  while(left_index < left.column_count * (column_index + 1)){
+  int row_index = blockIdx.y * blockDim.y + threadIdx.y;
+  int column_index = blockIdx.x * blockDim.x + threadIdx.x;
+  for(int i = 0; i < left.column_count; i++){
+    int left_index = row_index * left.column_count  + i;
+    int right_index = column_index + i * right.column_count;
     sum += left.elements[left_index] * right.elements[right_index];
-    left_index += 1;
-    right_index += right.row_count;
   }
-  result.elements[index] = sum;
+  result.elements[row_index * result.row_count + column_index] = sum;
+
 }
 
 Matrix multiply(Matrix left, Matrix right){
@@ -66,7 +63,7 @@ Matrix multiply(Matrix left, Matrix right){
   result.column_count = result_d.column_count = right.column_count;
   size_t result_size = result.row_count * result.column_count * sizeof(int);
   result.elements = (int*) malloc(result_size);
-  error = cudaMalloc((void**) &result_d, result_size);
+  error = cudaMalloc((void**) &result_d.elements, result_size);
   if(error != cudaSuccess){ printf("error allocating matrix\n"); }
 
   //step 3: copy left and right to device
@@ -76,13 +73,19 @@ Matrix multiply(Matrix left, Matrix right){
   if(error != cudaSuccess){ printf("error copying right matrix\n"); }
 
   //step 4: launch kernel
-  int block_size = 64;
-  int grid_size = result_size / block_size + 1;
-  multiply_kernel_stupid <<<grid_size, block_size>>> (left_d, right_d, result_d);
+
+
+
+  dim3 block_dims(32, 32);
+  dim3 grid_dims(result.column_count / block_dims.x, result.row_count / block_dims.y);
+  multiply_kernel_stupid <<<grid_dims, block_dims>>> (left_d, right_d, result_d);
 
   //step 5: copy results back to host
-  cudaMemcpy(result.elements, result_d.elements, result_size, cudaMemcpyDeviceToHost);
-  if(error != cudaSuccess){ printf("error copying result matrix\n"); }
+  error = cudaMemcpy(result.elements, result_d.elements, result_size, cudaMemcpyDeviceToHost);
+  if(error != cudaSuccess){
+  	printf("error copying result matrix\n");
+  	printf("CUDA error: %s\n", cudaGetErrorString(error));
+  }
   return result;
 }
 
