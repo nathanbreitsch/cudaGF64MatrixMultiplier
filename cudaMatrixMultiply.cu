@@ -2,21 +2,25 @@
 
 //define matrix type
 typedef struct{
-  int row_count,
-  int column_count,
-  int* elements
+  int row_count;
+  int column_count;
+  int* elements;
 } Matrix;
 
 
 __global__ void multiply_kernel_stupid(const Matrix left, const Matrix right, Matrix result);
 Matrix ones(int row_count, int column_count);
-Matrix multiply(Matrix left, matrix right);
+Matrix multiply(Matrix left, Matrix right);
+void print_matrix(Matrix mat);
 
 int main(){
   //make the matrices you want to multiply
-  Matrix A = ones(200, 50);
-  Matrix B = ones(50, 200);
-
+  Matrix A = ones(10, 5);
+  Matrix B = ones(5, 10);
+  Matrix result = multiply(A, B);
+  print_matrix(A);
+  print_matrix(B);
+  print_matrix(result);
 }
 
 //stupid kernel, one thread per result cell, global memory, no use of spacial locality.
@@ -26,17 +30,17 @@ __global__ void multiply_kernel_stupid(const Matrix left, const Matrix right, Ma
   int column_index = index % result.column_count;
   //now compute the dot product of left row with right column
   int sum = 0;
-  int left_index = left.column_count * column_index;
+  int left_index = left.column_count * row_index;
   int right_index = column_index;
-  while(left_index < levt.column_count * (column_index + 1)){
-    sum += left[left_index] * right[right_index];
+  while(left_index < left.column_count * (column_index + 1)){
+    sum += left.elements[left_index] * right.elements[right_index];
     left_index += 1;
     right_index += right.row_count;
   }
-  __syncthreads();
+  result.elements[index] = sum;
 }
 
-Matrix multiply(Matrix left, matrix right){
+Matrix multiply(Matrix left, Matrix right){
   cudaError_t error;
   //step 1: allocate memory on the kernel for left, right, result
   Matrix left_d, right_d;
@@ -44,7 +48,11 @@ Matrix multiply(Matrix left, matrix right){
   left_d.column_count = left.column_count;
   size_t left_size = left.row_count * left.column_count * sizeof(int);
   error = cudaMalloc((void**) &left_d.elements, left_size);
-  if(error != cudaSuccess){ printf("error allocating left matrix\n"); }
+  if(error != cudaSuccess){
+    printf("error allocating left matrix\n");
+    printf("CUDA error: %s\n", cudaGetErrorString(error));
+  }
+
 
   right_d.row_count = right.row_count;
   right_d.column_count = right.column_count;
@@ -57,7 +65,7 @@ Matrix multiply(Matrix left, matrix right){
   result.row_count = result_d.row_count = left.row_count;
   result.column_count = result_d.column_count = right.column_count;
   size_t result_size = result.row_count * result.column_count * sizeof(int);
-  result.element = malloc(result_size);
+  result.elements = (int*) malloc(result_size);
   error = cudaMalloc((void**) &result_d, result_size);
   if(error != cudaSuccess){ printf("error allocating matrix\n"); }
 
@@ -68,14 +76,13 @@ Matrix multiply(Matrix left, matrix right){
   if(error != cudaSuccess){ printf("error copying right matrix\n"); }
 
   //step 4: launch kernel
-  int block_size = 512;
-  int grid_size = result_size / grid_size + 1
-  error = multiply_kernel_stupid(left_d, right_d, result_d);
-  if(error != cudaSuccess){ printf("error launching kernel\n"); }
+  int block_size = 64;
+  int grid_size = result_size / block_size + 1;
+  multiply_kernel_stupid <<<block_size, grid_size>>> (left_d, right_d, result_d);
 
   //step 5: copy results back to host
   cudaMemcpy(result.elements, result_d.elements, result_size, cudaMemcpyDeviceToHost);
-
+  return result;
 }
 
 Matrix ones (int row_count, int column_count){
@@ -84,6 +91,15 @@ Matrix ones (int row_count, int column_count){
   result.column_count = column_count;
   result.elements = (int*) malloc(row_count * column_count * sizeof(int));
   for(int i = 0; i < row_count * column_count; i++){
-    result[i] = 1;
+    result.elements[i] = 1;
+  }
+  return result;
+}
+
+void print_matrix(Matrix mat){
+  int num_elements = mat.row_count * mat.column_count;
+  for(int i = 0; i < num_elements; i++){
+    printf(" %d", mat.elements[i]);
+    if(!((i + 1) % mat.column_count)){ printf("\n"); }
   }
 }
