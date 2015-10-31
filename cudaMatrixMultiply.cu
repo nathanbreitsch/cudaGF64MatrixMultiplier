@@ -82,6 +82,7 @@ Matrix multiply(Matrix left, Matrix right){
 
   //step 5: copy results back to host
   cudaMemcpy(result.elements, result_d.elements, result_size, cudaMemcpyDeviceToHost);
+  if(error != cudaSuccess){ printf("error copying result matrix\n"); }
   return result;
 }
 
