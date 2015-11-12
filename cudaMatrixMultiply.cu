@@ -3,6 +3,10 @@
 //for instance, n threads access each of the n rows in a column at the same time.
 //would it be faster for thread i to access row i % n first and proceed to i + j % n?
 
+#define TILE_WIDTH 32
+#define DIVIDE_ROUND_UP(a, b)((a + b - 1) / b)
+#define GET_INDEX(row, column, numcols)(row * numcols + column)
+
 #include <stdio.h>
 
 //define matrix type
@@ -28,7 +32,7 @@ int main(){
   print_matrix(result);
 }
 
-//stupid kernel, one thread per result cell, global memory, no use of spacial locality.
+//global memory
 __global__ void multiply_kernel_stupid(const Matrix left, const Matrix right, Matrix result){
   int sum = 0;
   int row_index = blockIdx.y * blockDim.y + threadIdx.y;
@@ -39,6 +43,66 @@ __global__ void multiply_kernel_stupid(const Matrix left, const Matrix right, Ma
     sum += left.elements[left_index] * right.elements[right_index];
   }
   result.elements[row_index * result.row_count + column_index] = sum;
+
+}
+
+//better kernel, shared memory
+__global__ void multiply_kernel_smart(const Matrix left, const Matrix right, Matrix result){
+  // allocate shared memory
+  __shared__ int left_shared[TILE_WIDTH*TILE_WIDTH];
+  __shared__ int right_shared[TILE_WIDTH*TILE_WIDTH];
+
+  //get row/col indices
+  int result_row_index = threadIdx.y + blockDim.y * blockIdx.y;
+  int result_col_index = threadIdx.x + blockDim.x * blockIdx.x;
+  //int grid_row = blockIdx.y;
+  //int grid_col = blockIdx.x;
+  int block_row = threadIdx.y;
+  int block_col = threadIdx.x;
+
+  //how many blocks do we need to multiply?
+  int num_block_mult = DIVIDE_ROUND_UP(left.column_count, blockDim.x);
+
+  //loop through the tiles that we need to multiply
+  for(int i = 0; i < num_block_mult; i++){
+    //copy relevant blocks to shared memory, watch out for overflow
+    int left_col_index = i * blockDim.x + block_col;
+    int& left_row_index = result_row_index; //different name for readability
+    int& right_col_index = result_col_index; //different name for readability
+    int right_row_index = i * blockDim.x + block_row;
+    int shared_array_index = block_col + block_row * blockDim.x;
+    int left_index = GET_INDEX(left_row_index, left_col_index, left.column_count);
+    int right_index = GET_INDEX(right_row_index, right_col_index, right.column_count);
+
+    if(left_col_index < left.column_count && left_row_index < left.row_count){
+      left_shared[shared_array_index] = left.elements[left_index];
+    }
+    else{
+      left_shared[shared_array_index] = 0;
+    }
+
+    if(right_col_index < right.column_count && right_row_index < right.row_count){
+      right_shared[shared_array_index] = right.elements[right_index];
+    }
+    else{
+      right_shared[shared_array_index] = 0;
+    }
+
+    //make sure threads all finish copying to shared memory before doing multiplications
+    __syncthreads();
+
+    //do multiplications
+    int dot_product = 0;
+    for(int k = 0; k < blockDim.x; k++){
+      dot_product += left_shared[GET_INDEX(blockIdx.y, k, blockDim.x)] * right_shared[GET_INDEX(k, blockIdx.x, blockDim.x)];
+    }
+
+    //make sure threads all finish multiplying before writing resulting block to memory
+    __syncthreads();
+
+    //write to global memory
+    result.elements[GET_INDEX(result_row_index, result_col_index, result.column_count)] = dot_product;
+  }
 
 }
 
@@ -81,7 +145,7 @@ Matrix multiply(Matrix left, Matrix right){
 
 
 
-  dim3 block_dims(32, 32);
+  dim3 block_dims(TILE_WIDTH, TILE_WIDTH);
   dim3 grid_dims(result.column_count / block_dims.x + 1, result.row_count / block_dims.y + 1);
   multiply_kernel_stupid <<<grid_dims, block_dims>>> (left_d, right_d, result_d);
 
