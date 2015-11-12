@@ -146,8 +146,8 @@ Matrix multiply(Matrix left, Matrix right){
 
 
   dim3 block_dims(TILE_WIDTH, TILE_WIDTH);
-  dim3 grid_dims(result.column_count / block_dims.x + 1, result.row_count / block_dims.y + 1);
-  multiply_kernel_stupid <<<grid_dims, block_dims>>> (left_d, right_d, result_d);
+  dim3 grid_dims(DIVIDE_ROUND_UP(result.column_count, block_dims.x), DIVIDE_ROUND_UP(result.row_count, block_dims.y));
+  multiply_kernel_smart <<<grid_dims, block_dims>>> (left_d, right_d, result_d);
 
   //step 5: copy results back to host
   error = cudaMemcpy(result.elements, result_d.elements, result_size, cudaMemcpyDeviceToHost);
