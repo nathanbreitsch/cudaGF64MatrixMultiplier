@@ -8,6 +8,9 @@
 #define GET_INDEX(row, column, numcols)(row * numcols + column)
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+
 
 //define matrix type
 typedef struct{
@@ -19,17 +22,20 @@ typedef struct{
 
 __global__ void multiply_kernel_stupid(const Matrix left, const Matrix right, Matrix result);
 Matrix ones(int row_count, int column_count);
+Matrix random(int row_count, int column_count);
 Matrix multiply(Matrix left, Matrix right);
 void print_matrix(Matrix mat);
 
 int main(){
   //make the matrices you want to multiply
-  Matrix A = ones(10, 5);
-  Matrix B = ones(5, 10);
+  srand(time(NULL));
+  Matrix A = random(512, 512);
+  Matrix B = random(512, 512);
   Matrix result = multiply(A, B);
   print_matrix(A);
   print_matrix(B);
   print_matrix(result);
+
 }
 
 //global memory
@@ -165,6 +171,17 @@ Matrix ones (int row_count, int column_count){
   result.elements = (int*) malloc(row_count * column_count * sizeof(int));
   for(int i = 0; i < row_count * column_count; i++){
     result.elements[i] = 1;
+  }
+  return result;
+}
+
+Matrix random (int row_count, int column_count){
+  Matrix result;
+  result.row_count = row_count;
+  result.column_count = column_count;
+  result.elements = (int*) malloc(row_count * column_count * sizeof(int));
+  for(int i = 0; i < row_count * column_count; i++){
+    result.elements[i] = rand() % 100;
   }
   return result;
 }
